@@ -25,6 +25,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaBrowser
+import androidx.media3.session.MediaController
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionToken
@@ -42,6 +43,7 @@ import cc.tomko.outify.playback.PlaybackStateHolder
 import cc.tomko.outify.playback.Player
 import cc.tomko.outify.playback.model.RepeatMode
 import cc.tomko.outify.utils.CoilBitmapLoader
+import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import dagger.hilt.android.AndroidEntryPoint
 import jakarta.inject.Inject
@@ -129,6 +131,7 @@ class PlaybackService : MediaLibraryService(),
     private lateinit var audioManager: AudioManager
     private var hasAudioFocus = false
     private var mediaLibrarySession: MediaLibrarySession? = null
+    private var selfBrowserFuture: ListenableFuture<MediaBrowser>? = null
     private val binder = MusicBinder()
 
     private val becomingNoisyListener = object : BroadcastReceiver() {
@@ -191,6 +194,7 @@ class PlaybackService : MediaLibraryService(),
 
         val sessionToken = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         val browserFuture = MediaBrowser.Builder(this, sessionToken).buildAsync()
+        selfBrowserFuture = browserFuture
         browserFuture.addListener({ browserFuture.get() }, MoreExecutors.directExecutor())
 
         if (requestAudioFocus()) {
@@ -376,6 +380,10 @@ class PlaybackService : MediaLibraryService(),
 
     override fun onDestroy() {
         Log.i(TAG, "Terminating PlaybackService")
+
+        // Disconnect the self browser before the session it is bound to goes away.
+        selfBrowserFuture?.let { MediaController.releaseFuture(it) }
+        selfBrowserFuture = null
 
         mediaLibrarySession?.run {
             player.stop()
