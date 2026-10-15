@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import cc.tomko.outify.BuildConfig
 import cc.tomko.outify.core.model.PlaylistFolder
 import cc.tomko.outify.data.setting.GestureAction
 import cc.tomko.outify.data.setting.GestureSetting
@@ -23,6 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -551,6 +553,20 @@ class SettingsRepository @Inject constructor(
 
     val clientId: Flow<String?> = dataStore.data.map { it[Keys.CLIENT_ID] }
     val clientSecret: Flow<String?> = dataStore.data.map { it[Keys.CLIENT_SECRET] }
+
+    /**
+     * Custom client credentials when both id and secret are set, otherwise the
+     * built-in ones. Never mixes a custom id with the built-in secret.
+     */
+    suspend fun resolveClientCredentials(): Pair<String, String> {
+        val id = clientId.first()
+        val secret = clientSecret.first()
+        return if (!id.isNullOrBlank() && !secret.isNullOrBlank()) {
+            id to secret
+        } else {
+            BuildConfig.SPOTIFY_CLIENT_ID to BuildConfig.SPOTIFY_CLIENT_SECRET
+        }
+    }
 
     suspend fun setClientId(id: String?) {
         dataStore.edit { prefs ->
