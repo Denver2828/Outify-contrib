@@ -2,7 +2,6 @@ package cc.tomko.outify.ui.viewmodel.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import cc.tomko.outify.BuildConfig
 import cc.tomko.outify.LibrespotFfi
 import cc.tomko.outify.core.spirc.SpircController
 import cc.tomko.outify.data.repository.PlaybackSettings
@@ -13,8 +12,6 @@ import jakarta.inject.Inject
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 
 @HiltViewModel
@@ -135,8 +132,7 @@ class PlaybackSettingViewModel @Inject constructor(
         if (_isRestarting.value) return
 
         viewModelScope.launch {
-            val id = settingsRepository.clientId.firstOrNull() ?: BuildConfig.SPOTIFY_CLIENT_ID
-            val secret = settingsRepository.clientSecret.first() ?: BuildConfig.SPOTIFY_CLIENT_SECRET
+            val (id, secret) = settingsRepository.resolveClientCredentials()
 
             _isRestarting.value = true
             try {

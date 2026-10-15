@@ -148,11 +148,11 @@ impl SpotifyClient {
         }
     }
 
+    /// Whether a stored token exists. Does not refresh, so a transient
+    /// network failure while refreshing does not log the user out.
+    /// Revoked refresh tokens remove the stored token in `refresh_token`.
     pub async fn is_oauth_authenticated(&self) -> bool {
-        match self.load_token().await {
-            Ok(Some(_)) => true,
-            _ => false,
-        }
+        matches!(self.read_token_file(), Ok(Some(_)))
     }
 
     pub async fn get_scope(&self) -> Option<String> {
@@ -162,7 +162,7 @@ impl SpotifyClient {
         }
     }
 
-    pub async fn load_token(&self) -> Result<Option<WebApiToken>, SpotifyApiError> {
+    fn read_token_file(&self) -> Result<Option<WebApiToken>, SpotifyApiError> {
         let mut path = crate::FILES_DIR
             .get()
             .ok_or_else(|| SpotifyApiError::Generic("Android file path is not set!".to_string()))?
@@ -170,12 +170,18 @@ impl SpotifyClient {
 
         path.push("account.json");
 
-        let token = match std::fs::read_to_string(&path) {
-            Ok(contents) => serde_json::from_str::<WebApiToken>(&contents).map_err(|e| {
-                SpotifyApiError::Generic(format!("Failed to parse token JSON: {e}"))
-            })?,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(e) => return Err(SpotifyApiError::IO(e)),
+        match std::fs::read_to_string(&path) {
+            Ok(contents) => serde_json::from_str::<WebApiToken>(&contents)
+                .map(Some)
+                .map_err(|e| SpotifyApiError::Generic(format!("Failed to parse token JSON: {e}"))),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(SpotifyApiError::IO(e)),
+        }
+    }
+
+    pub async fn load_token(&self) -> Result<Option<WebApiToken>, SpotifyApiError> {
+        let Some(token) = self.read_token_file()? else {
+            return Ok(None);
         };
 
         if token.is_expired() {
@@ -190,6 +196,16 @@ impl SpotifyClient {
         &self,
         token: &WebApiToken,
     ) -> Result<WebApiToken, SpotifyApiError> {
+        let _guard = self.refresh_lock.lock().await;
+
+        // Another request may have refreshed while we waited for the lock;
+        // reusing the old (rotated) refresh token would then fail.
+        if let Some(stored) = self.read_token_file()? {
+            if stored.access_token != token.access_token && !stored.is_expired() {
+                return Ok(stored);
+            }
+        }
+
         let mut form = HashMap::new();
         form.insert("grant_type", "refresh_token");
         form.insert("refresh_token", &token.refresh_token);
@@ -202,6 +218,15 @@ impl SpotifyClient {
             .form(&form)
             .send()
             .await?;
+
+        if response.status() == reqwest::StatusCode::BAD_REQUEST {
+            let body = response.text().await.unwrap_or_default();
+            if body.contains("invalid_grant") {
+                error!("refresh token revoked, removing stored token: {body}");
+                let _ = self.remove_token();
+            }
+            return Err(SpotifyApiError::Http(400, body));
+        }
 
         let response = check_response_json::<TokenResponse>("refresh_token", response).await?;
 

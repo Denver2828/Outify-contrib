@@ -47,6 +47,9 @@ pub struct SpotifyClient {
     pub(crate) client: Client,
     pub(crate) token: Arc<RwLock<Option<WebApiToken>>>,
     pub(crate) oauth_state: Arc<RwLock<Option<OAuthState>>>,
+    /// Serializes token refreshes. Spotify rotates refresh tokens, so
+    /// concurrent refreshes with the same refresh token would fail.
+    pub(crate) refresh_lock: tokio::sync::Mutex<()>,
 }
 
 impl SpotifyClient {
@@ -60,6 +63,7 @@ impl SpotifyClient {
                 .expect("failed to build client"),
             token: Arc::new(RwLock::new(None)),
             oauth_state: Arc::new(RwLock::new(None)),
+            refresh_lock: tokio::sync::Mutex::new(()),
         }
     }
 
