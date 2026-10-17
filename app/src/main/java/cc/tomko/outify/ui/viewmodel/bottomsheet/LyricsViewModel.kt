@@ -154,7 +154,6 @@ class LyricsViewModel @Inject constructor(
     fun playPause() {
         viewModelScope.launch {
             spirc.playerPlayPause()
-            playbackStateHolder.setPlaying(!playbackStateHolder.state.value.isPlaying)
         }
     }
 

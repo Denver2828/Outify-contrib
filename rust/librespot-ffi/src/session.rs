@@ -160,6 +160,10 @@ fn start_shutdown_listener(session: &Session) {
 pub async fn rebuild_all(reason: &str) -> Result<(), String> {
     info!("rebuilding session and spirc ({reason})");
 
+    // Teardown emits Stopped; preserve whether this was an interruption, while
+    // the independent pause intent can still veto restoration during the rebuild.
+    let was_playing = crate::spirc::is_playing();
+
     crate::spirc::set_state(crate::spirc::SpircState::Rebuilding);
     notify_callback("onRestarting");
 
@@ -183,7 +187,7 @@ pub async fn rebuild_all(reason: &str) -> Result<(), String> {
         } else {
             // Restore the Connect session before announcing readiness, so that
             // Kotlin accepts commands only once they can actually take effect.
-            crate::spirc::reestablish_after_restart();
+            crate::spirc::reestablish_after_restart(was_playing);
             crate::spirc::set_state(crate::spirc::SpircState::Ready);
             notify_callback("onRestarted");
 

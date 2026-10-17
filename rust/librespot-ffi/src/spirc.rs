@@ -85,10 +85,20 @@ pub static CROSSFADE: AtomicU32 = AtomicU32::new(0);
 static AUTO_TRANSFER: AtomicBool = AtomicBool::new(true);
 static CURRENT_CONTEXT: OnceCell<Mutex<Option<CurrentContext>>> = OnceCell::new();
 static IS_PLAYING: AtomicBool = AtomicBool::new(false);
+static PLAYBACK_INTENT: crate::playback_intent::PlaybackIntent =
+    crate::playback_intent::PlaybackIntent::new();
 static IS_SHUFFLING: AtomicBool = AtomicBool::new(false);
 static REPEAT_MODE: AtomicU8 = AtomicU8::new(RepeatMode::Off as u8);
 static LAST_POSITION: AtomicU32 = AtomicU32::new(0);
 static IS_DEVICE_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+pub fn set_playback_paused(paused: bool) {
+    PLAYBACK_INTENT.set_paused(paused);
+}
+
+pub fn is_playing() -> bool {
+    IS_PLAYING.load(Ordering::Relaxed)
+}
 
 static STATE: AtomicU8 = AtomicU8::new(STOPPED);
 
@@ -288,6 +298,9 @@ impl SpircRuntime {
     }
 
     pub fn play(&self) -> Result<(), librespot_core::Error> {
+        if !PLAYBACK_INTENT.can_play() {
+            return Ok(());
+        }
         self.spirc.play()?;
         self.arm("play");
         Ok(())
@@ -301,7 +314,9 @@ impl SpircRuntime {
 
     pub fn pause(&self) -> Result<(), librespot_core::Error> {
         self.spirc.pause()?;
-        self.arm("pause");
+        // Pausing an already paused/loading runtime need not emit an event.
+        // Cancel an outstanding play ack instead of causing a false stall/rebuild.
+        clear_command_ack();
         Ok(())
     }
 
@@ -337,7 +352,7 @@ impl SpircRuntime {
 
         let modified_options = LoadRequestOptions {
             context_options: Some(context_options),
-            start_playing: options.start_playing,
+            start_playing: options.start_playing && PLAYBACK_INTENT.can_play(),
             seek_to: options.seek_to,
             playing_track: options.playing_track,
         };
@@ -440,7 +455,7 @@ impl SpircRuntime {
     }
 
     // Resumes last played context after Spirc shutdown
-    pub fn resume_playback(&self) {
+    pub fn resume_playback(&self, was_playing: bool) {
         let context = match CURRENT_CONTEXT.get() {
             Some(c) => match c.lock().unwrap().clone() {
                 Some(c) => c,
@@ -460,8 +475,10 @@ impl SpircRuntime {
             }
         };
 
-        let start_playing =
-            IS_PLAYING.load(std::sync::atomic::Ordering::Relaxed) && context.options.start_playing;
+        let start_playing = PLAYBACK_INTENT.should_resume(
+            was_playing,
+            context.options.start_playing,
+        );
         let seek_to = LAST_POSITION.load(std::sync::atomic::Ordering::Relaxed);
         let shuffle = IS_SHUFFLING.load(std::sync::atomic::Ordering::Relaxed);
         let repeat_mode =
@@ -582,6 +599,13 @@ fn handle_event(event: PlayerEvent) {
             position_ms,
         } => {
             clear_command_ack();
+            if !PLAYBACK_INTENT.can_play() {
+                // Commands queued before a pause (or a transfer during rebuild) can
+                // still emit Playing. Stop the decoder as well as Android output.
+                let _ = with_spirc(|runtime| runtime.spirc.pause());
+                crate::jni_utils::playback::on_player_status(false);
+                return;
+            }
             IS_PLAYING.store(true, std::sync::atomic::Ordering::Relaxed);
             LAST_POSITION.store(position_ms, std::sync::atomic::Ordering::Relaxed);
 
@@ -637,6 +661,8 @@ fn handle_event(event: PlayerEvent) {
         }
         PlayerEvent::Stopped { .. } => {
             clear_command_ack();
+            IS_PLAYING.store(false, Ordering::Relaxed);
+            crate::jni_utils::playback::on_player_status(false);
         }
         PlayerEvent::TimeToPreloadNextTrack {
             play_request_id: _,
@@ -954,7 +980,7 @@ fn command_ack_diagnostics() -> String {
 }
 
 /// Re-establishes the Connect session and playback after a (re)build.
-pub fn reestablish_after_restart() {
+pub fn reestablish_after_restart(was_playing: bool) {
     let transferred = with_spirc(|spirc| {
         let _ = spirc.activate();
 
@@ -977,7 +1003,7 @@ pub fn reestablish_after_restart() {
 
     match transferred {
         Ok(true) => {
-            let _ = with_spirc(|spirc| spirc.resume_playback());
+            let _ = with_spirc(|spirc| spirc.resume_playback(was_playing));
         }
         Ok(false) => {
             // Another device stayed active, so the server drives our state and

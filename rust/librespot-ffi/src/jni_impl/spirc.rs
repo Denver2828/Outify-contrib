@@ -612,6 +612,15 @@ pub extern "system" fn Java_cc_tomko_outify_core_spirc_Spirc_playerPlay(
 
 // Pauses the player
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_cc_tomko_outify_core_spirc_Spirc_setPlaybackPaused(
+    _env: JNIEnv,
+    _this: JClass,
+    paused: jboolean,
+) {
+    crate::spirc::set_playback_paused(paused != 0);
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_cc_tomko_outify_core_spirc_Spirc_playerPause(
     _env: JNIEnv,
     _this: JClass,

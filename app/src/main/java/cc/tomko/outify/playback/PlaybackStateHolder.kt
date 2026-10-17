@@ -19,6 +19,8 @@ import kotlin.time.toDuration
 
 @Singleton
 class PlaybackStateHolder @Inject constructor() {
+    val playbackIntent = PlaybackIntent()
+
     private val _state = MutableStateFlow(PlaybackState())
     val state: StateFlow<PlaybackState> = _state.asStateFlow()
 
@@ -42,11 +44,7 @@ class PlaybackStateHolder @Inject constructor() {
     }
 
     suspend fun play() {
-        mutex.withLock {
-            _state.value = _state.value.copy(
-                isPlaying = true
-            )
-        }
+        setPlaying(true)
     }
 
     suspend fun pause() {
@@ -98,7 +96,17 @@ class PlaybackStateHolder @Inject constructor() {
 
     suspend fun setPlaying(playing: Boolean) {
         mutex.withLock {
-            _state.value = _state.value.copy(isPlaying = playing)
+            val effectivePlaying = playing && playbackIntent.canPlay
+            val cur = _state.value
+            _state.value = cur.copy(
+                isPlaying = effectivePlaying,
+                position = if (cur.isPlaying != effectivePlaying) {
+                    cur.position.copy(
+                        active = computePositionLocked(),
+                        lastSync = System.currentTimeMillis(),
+                    )
+                } else cur.position,
+            )
         }
     }
 

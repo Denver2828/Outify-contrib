@@ -13,6 +13,7 @@ pub mod spotify;
 pub mod types;
 
 mod playback;
+mod playback_intent;
 mod profile;
 mod spirc;
 

@@ -207,6 +207,10 @@ object Spirc {
     @JvmStatic
     external fun playerPause(): Boolean
 
+    /** Retained across native rebuilds, including a pause requested while not ready. */
+    @JvmStatic
+    external fun setPlaybackPaused(paused: Boolean)
+
     /**
      * Tells the player to toggle play status
      */

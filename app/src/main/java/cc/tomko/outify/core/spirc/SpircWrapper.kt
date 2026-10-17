@@ -68,6 +68,35 @@ class SpircWrapper @Inject constructor(
         _isUsable.value = state.isUsable
     }
 
+    @Synchronized
+    private fun playByUser() {
+        playbackStateHolder.playbackIntent.playByUser()
+        Spirc.setPlaybackPaused(false)
+    }
+
+    /** Focus changes must not be mistaken for an explicit Play/Pause action. */
+    @Synchronized
+    fun pauseForAudioFocus() {
+        playbackStateHolder.playbackIntent.pauseForAudioFocus()
+        Spirc.setPlaybackPaused(true)
+        scope.launch { playbackStateHolder.setPlaying(false) }
+        if (isUsable) Spirc.playerPause()
+    }
+
+    @Synchronized
+    fun resumeAfterAudioFocus(): Boolean {
+        if (!playbackStateHolder.playbackIntent.resumeAfterAudioFocus()) return false
+        Spirc.setPlaybackPaused(false)
+        return isUsable && Spirc.playerPlay()
+    }
+
+    @Synchronized
+    fun enforcePause() {
+        if (playbackStateHolder.playbackIntent.canPlay) return
+        Spirc.setPlaybackPaused(true)
+        if (isUsable) Spirc.playerPause()
+    }
+
     override fun shutdown() {
         // Native teardown publishes no callback, so drop the gate here or the
         // wrapper would keep reporting itself as usable.
@@ -76,6 +105,7 @@ class SpircWrapper @Inject constructor(
     }
 
     override suspend fun startRadio(trackUri: OutifyUri, shuffle: Boolean): Boolean {
+        val generation = playbackStateHolder.playbackIntent.state.value.generation
         return withContext(Dispatchers.IO) {
             val jsonResult = spClient.getRadioForTrack(trackUri.toUriString()) ?: return@withContext false
             val result: RadioResult = json.decodeFromString(jsonResult)
@@ -87,10 +117,12 @@ class SpircWrapper @Inject constructor(
             val playlistUri = result.mediaItems.first().uri
             val uri = OutifyUri.fromUriString(playlistUri)
 
-            if (shuffle) {
-                shuffleLoad(playlistUri)
-            } else {
-                load(uri, trackUri)
+            synchronized(this@SpircWrapper) {
+                // Fetching a radio can outlive a subsequent user pause or selection.
+                if (playbackStateHolder.playbackIntent.state.value.generation != generation) {
+                    return@synchronized false
+                }
+                if (shuffle) shuffleLoad(playlistUri) else load(uri, trackUri)
             }
         }
     }
@@ -121,8 +153,10 @@ class SpircWrapper @Inject constructor(
      * @param playingTrackUri from which to start playing in this context. Leave empty for first/random
      * @return `true` if loaded successfully
      */
+    @Synchronized
     override fun load(context: OutifyUri?, playingTrackUri: OutifyUri?): Boolean {
         if (!requireReady("load")) return false
+        playByUser()
 
         scope.launch {
             savedQueueRepository.setActiveQueueId(null)
@@ -146,8 +180,10 @@ class SpircWrapper @Inject constructor(
         return Spirc.setQueue(uris, playingTrackUri)
     }
 
+    @Synchronized
     override fun localLoad(uri: String): Boolean {
         if (!requireReady("localLoad")) return false
+        playByUser()
 
         scope.launch {
             savedQueueRepository.setActiveQueueId(null)
@@ -190,8 +226,10 @@ class SpircWrapper @Inject constructor(
     /**
      * Loads the context URI and starts playing randomly within it
      */
+    @Synchronized
     override fun shuffleLoad(uri: String?): Boolean {
         if (!requireReady("shuffleLoad")) return false
+        playByUser()
 
         scope.launch {
             savedQueueRepository.setActiveQueueId(null)
@@ -308,31 +346,35 @@ class SpircWrapper @Inject constructor(
     /**
      * Tells the player to start playing
      */
+    @Synchronized
     override fun playerPlay(): Boolean {
         if (!requireReady("playerPlay")) return false
 
+        playByUser()
         startForegroundPlaybackService()
-        return Spirc.playerPlay()
+        val accepted = Spirc.playerPlay()
+        if (accepted) scope.launch { playbackStateHolder.setPlaying(true) }
+        return accepted
     }
 
     /**
      * Tells the player to pause playing
      */
+    @Synchronized
     override fun playerPause(): Boolean {
-        if (!requireReady("playerPause")) return false
-
-        startPlaybackService()
-        return Spirc.playerPause()
+        // Record intent even during a rebuild, before a delayed Playing event can arrive.
+        playbackStateHolder.playbackIntent.pauseByUser()
+        Spirc.setPlaybackPaused(true)
+        scope.launch { playbackStateHolder.setPlaying(false) }
+        return !isUsable || Spirc.playerPause()
     }
 
     /**
      * Tells the player to toggle play status
      */
+    @Synchronized
     override fun playerPlayPause(): Boolean {
-        if (!requireReady("playerPlayPause")) return false
-
-        startForegroundPlaybackService()
-        return Spirc.playerPlayPause()
+        return if (playbackStateHolder.state.value.isPlaying) playerPause() else playerPlay()
     }
 
     /**

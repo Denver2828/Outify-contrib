@@ -34,6 +34,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -206,8 +207,24 @@ class Player @Inject constructor(
                 }
 
                 override fun onPlayingStatus(playing: Boolean) {
+                    if (!playing || !stateHolder.playbackIntent.canPlay) engine.pause()
                     scope.launch {
-                        stateHolder.setPlaying(playing)
+                        if (playing && stateHolder.playbackIntent.canPlay) {
+                            val command = audioFocusManager.updateAudioFocus(true, STATE_READY)
+                            if (command == AudioFocusManager.PLAYER_COMMAND_PLAY_WHEN_READY) {
+                                engine.resume()
+                                stateHolder.setPlaying(true)
+                            } else {
+                                engine.pause()
+                                spirc.pauseForAudioFocus()
+                            }
+                        } else {
+                            stateHolder.setPlaying(false)
+                            if (playing) {
+                                // A queued event or a Connect transfer cannot undo a local pause.
+                                spirc.enforcePause()
+                            }
+                        }
                         invalidateState()
                     }
                 }
@@ -227,9 +244,8 @@ class Player @Inject constructor(
                 when (command) {
                     AudioFocusManager.PLAYER_COMMAND_WAIT_FOR_CALLBACK,
                     AudioFocusManager.PLAYER_COMMAND_DO_NOT_PLAY -> {
-                        scope.launch(Dispatchers.IO) {
-                            spirc.playerPause()
-                        }
+                        engine.pause()
+                        spirc.pauseForAudioFocus()
                         scope.launch {
                             stateHolder.setPlaying(false)
                             invalidateState()
@@ -237,13 +253,7 @@ class Player @Inject constructor(
                     }
 
                     AudioFocusManager.PLAYER_COMMAND_PLAY_WHEN_READY -> {
-                        scope.launch(Dispatchers.IO) {
-                            spirc.playerPlay()
-                        }
-                        scope.launch {
-                            stateHolder.setPlaying(true)
-                            invalidateState()
-                        }
+                        spirc.resumeAfterAudioFocus()
                     }
                 }
             }
@@ -252,6 +262,18 @@ class Player @Inject constructor(
 
     init {
         audioFocusManager.setAudioAttributes(PlaybackService.AUDIO_ATTRIBUTES)
+        scope.launch {
+            stateHolder.playbackIntent.state.collect { intent ->
+                if (!intent.canPlay) {
+                    engine.pause()
+                    stateHolder.setPlaying(false)
+                    if (intent.userPaused) audioFocusManager.updateAudioFocus(false, STATE_READY)
+                    invalidateState()
+                } else {
+                    engine.resume()
+                }
+            }
+        }
     }
 
     override fun getState(): State {
@@ -317,21 +339,22 @@ class Player @Inject constructor(
     }
 
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
+        if (!playWhenReady) {
+            spirc.playerPause()
+            engine.pause()
+            audioFocusManager.updateAudioFocus(false, STATE_READY)
+            return Futures.immediateVoidFuture()
+        }
         val currentMedia3State =
             if (stateHolder.state.value.currentAudio == null) STATE_IDLE else STATE_READY
 
+        if (!spirc.playerPlay()) return Futures.immediateVoidFuture()
         val playerCommand = audioFocusManager.updateAudioFocus(playWhenReady, currentMedia3State)
 
-        scope.launch(Dispatchers.IO) {
-            when (playerCommand) {
-                AudioFocusManager.PLAYER_COMMAND_PLAY_WHEN_READY -> {
-                    if (playWhenReady) spirc.playerPlay() else spirc.playerPause()
-                }
-
-                AudioFocusManager.PLAYER_COMMAND_DO_NOT_PLAY,
-                AudioFocusManager.PLAYER_COMMAND_WAIT_FOR_CALLBACK -> {
-                    spirc.playerPause()
-                }
+        when (playerCommand) {
+            AudioFocusManager.PLAYER_COMMAND_DO_NOT_PLAY,
+            AudioFocusManager.PLAYER_COMMAND_WAIT_FOR_CALLBACK -> {
+                spirc.pauseForAudioFocus()
             }
         }
         return Futures.immediateVoidFuture()
@@ -358,9 +381,8 @@ class Player @Inject constructor(
     }
 
     override fun handleStop(): ListenableFuture<*> {
-        scope.launch(Dispatchers.IO) {
-            spirc.playerPause() //TODO: Implement playerStop
-        }
+        spirc.playerPause()
+        engine.pause()
         audioFocusManager.updateAudioFocus(false, STATE_IDLE)
         return Futures.immediateVoidFuture()
     }
@@ -401,6 +423,8 @@ class Player @Inject constructor(
     }
 
     public override fun handleRelease(): ListenableFuture<*> {
+        scope.cancel()
+        engine.pause()
         engine.releaseAudioTrack()
         engine.releaseNative()
 

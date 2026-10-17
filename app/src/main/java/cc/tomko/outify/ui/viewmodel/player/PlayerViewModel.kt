@@ -133,9 +133,6 @@ class PlayerViewModel @Inject constructor(
             when (action) {
                 PlayerAction.PlayPause -> {
                     spirc.playerPlayPause()
-                    viewModelScope.launch {
-                        playbackStateHolder.setPlaying(!playbackStateHolder.state.value.isPlaying)
-                    }
                 }
 
                 PlayerAction.Next -> spirc.playerNext()

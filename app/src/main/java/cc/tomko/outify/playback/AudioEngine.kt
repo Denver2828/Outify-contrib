@@ -37,6 +37,9 @@ class AudioEngine(
     private var currentChannels = -1
     private var currentFormat: PcmFormat? = null
 
+    @Volatile
+    private var outputPaused = false
+
     private val pcmBuffer = ByteBuffer.allocateDirect(4 * 8192)
 
     private val sonic = SonicAudioProcessor()
@@ -64,6 +67,7 @@ class AudioEngine(
                 && format == currentFormat
                 && existing.state == AudioTrack.STATE_INITIALIZED
             ) {
+                if (existing.playState != AudioTrack.PLAYSTATE_PLAYING) existing.play()
                 return true
             }
 
@@ -145,7 +149,7 @@ class AudioEngine(
 
     fun releaseAudioTrack() {
         writeLock.withLock {
-            drainSonic()
+            resetSonic()
             val t = audioTrack ?: return
             try {
                 if (t.playState == AudioTrack.PLAYSTATE_PLAYING) {
@@ -184,15 +188,37 @@ class AudioEngine(
     }
 
     fun pause() {
+        outputPaused = true
+        // Do not wait for writeLock before pausing: a blocking write may hold it.
+        // AudioTrack.pause() interrupts that write so teardown cannot deadlock.
+        try {
+            audioTrack?.pause()
+        } catch (e: IllegalStateException) {
+            Log.w(TAG, "pause() failed", e)
+        }
         writeLock.withLock {
+            resetSonic()
             audioTrack?.let {
                 try {
                     it.pause()
+                    it.flush()
                 } catch (e: IllegalStateException) {
                     Log.w(TAG, "pause() failed", e)
                 }
             }
         }
+    }
+
+    fun resume() {
+        // Start the track on the next PCM frame, never from a stale status alone.
+        if (stateHolder.playbackIntent.canPlay) outputPaused = false
+    }
+
+    private fun resetSonic() {
+        sonic.reset()
+        sonicSampleRate = -1
+        sonicChannels = -1
+        sonicCommittedSpeed = 1f
     }
 
     fun setVolume(volume: Float) {
@@ -224,6 +250,7 @@ class AudioEngine(
      */
     fun onPcmReady(size: Int, sampleRate: Int, channels: Int) {
         writeLock.withLock {
+            if (outputPaused || !stateHolder.playbackIntent.canPlay) return
             pcmBuffer.order(ByteOrder.nativeOrder())
 
             if (!ensureAudioTrack(sampleRate, channels, PcmFormat.S16)) {
