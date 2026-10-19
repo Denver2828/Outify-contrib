@@ -98,7 +98,7 @@ import cc.tomko.outify.playback.model.RepeatMode
 import cc.tomko.outify.ui.GlobalPopupController
 import cc.tomko.outify.ui.Haptics
 import cc.tomko.outify.ui.PopupSpec
-import cc.tomko.outify.ui.components.AutoScrollingTextOnDemand
+import cc.tomko.outify.ui.components.DraggableMarquee
 import cc.tomko.outify.ui.components.SmartImage
 import cc.tomko.outify.ui.components.ToggleSegmentButton
 import cc.tomko.outify.ui.components.WavyMusicSlider
@@ -131,7 +131,6 @@ fun PlayerContent(
     val forwardMilliseconds by viewModel.forwardMilliseconds.collectAsState(15_000)
 
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-    val gradientEdgeColor = MaterialTheme.colorScheme.primaryContainer
     val textColor = MaterialTheme.colorScheme.onSurface
     val artistTextColor = MaterialTheme.colorScheme.onSurfaceVariant
 
@@ -221,7 +220,6 @@ fun PlayerContent(
             artistTextColor = artistTextColor,
             onArtistClick = onArtistClick,
             onShowClick = onShowClick,
-            gradientEdgeColor = gradientEdgeColor,
             expansionFractionProvider = expansionFractionProvider,
             isPlaying = isPlaying,
             titleStyle = if (landscape) {
@@ -850,7 +848,6 @@ private fun AudioMetadataSection(
     artistTextColor: Color,
     onArtistClick: (Artist) -> Unit,
     onShowClick: (Episode?) -> Unit,
-    gradientEdgeColor: Color,
     expansionFractionProvider: () -> Float,
     isPlaying: Boolean,
     modifier: Modifier = Modifier,
@@ -875,46 +872,49 @@ private fun AudioMetadataSection(
             }
     ) {
 
-        AutoScrollingTextOnDemand(
-            text = audio?.name ?: "Not playing",
-            style = titleStyle,
-            gradientEdgeColor = gradientEdgeColor,
+        DraggableMarquee(
+            contentKey = audio?.uri to audio?.name,
             expansionFractionProvider = expansionFractionProvider,
             canScroll = isPlaying,
-            modifier = Modifier
-                .fillMaxWidth(),
-        )
+        ) {
+            Text(
+                text = audio?.name ?: "Not playing",
+                style = titleStyle,
+                maxLines = 1,
+                softWrap = false,
+            )
+        }
 
         Spacer(modifier = Modifier.height(2.dp))
 
-        val subtitle = audio?.artists?.joinToString { it.name }
+        val artists = audio?.artists.orEmpty()
+        val subtitle = artists.takeIf { it.isNotEmpty() }?.joinToString { it.name }
             ?: audio?.showName
             ?: stringResource(R.string.player_unknown_source)
 
-        if (audio?.isEpisode() ?: true) {
-            AutoScrollingTextOnDemand(
-                text = subtitle,
-                style = artistStyle,
-                gradientEdgeColor = gradientEdgeColor,
-                expansionFractionProvider = expansionFractionProvider,
-                canScroll = isPlaying,
-                modifier = Modifier
-                    .clickable {
-                        onShowClick(audio?.sourceEpisode)
-                    }
-                    .fillMaxWidth(),
-            )
-        } else {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                audio.artists?.forEachIndexed { index, artist ->
+        DraggableMarquee(
+            contentKey = audio?.uri to subtitle,
+            expansionFractionProvider = expansionFractionProvider,
+            canScroll = isPlaying,
+        ) {
+            if (audio?.isEpisode() ?: true) {
+                Text(
+                    text = subtitle,
+                    style = artistStyle,
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier.clickable { onShowClick(audio?.sourceEpisode) },
+                )
+            } else if (artists.isEmpty()) {
+                Text(text = subtitle, style = artistStyle, maxLines = 1, softWrap = false)
+            } else {
+                artists.forEachIndexed { index, artist ->
                     Text(
-                        text = artist.name + if (index < (audio.artists.size - 1)) ", " else "",
+                        text = artist.name + if (index < artists.lastIndex) ", " else "",
                         style = artistStyle,
-                        modifier = Modifier.clickable {
-                            onArtistClick(artist)
-                        },
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.clickable { onArtistClick(artist) },
                     )
                 }
             }

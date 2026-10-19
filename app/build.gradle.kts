@@ -40,6 +40,7 @@ extensions.configure<ApplicationExtension>("android") {
         applicationId = "cc.tomko.outify"
         minSdk = 26
         targetSdk = 36
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         versionCode = majorVersion * 10_000 + minorVersion * 100 + patchVersion
         versionName = "$majorVersion.$minorVersion.$patchVersion"
 
