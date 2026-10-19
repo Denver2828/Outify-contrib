@@ -9,9 +9,9 @@ import cc.tomko.outify.core.spirc.SpircWrapper
 import cc.tomko.outify.data.repository.PlayerRepository
 import cc.tomko.outify.data.repository.SettingsRepository
 import cc.tomko.outify.playback.PlaybackStateHolder
+import cc.tomko.outify.ui.viewmodel.player.positionTicks
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -20,7 +20,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import kotlin.time.DurationUnit
@@ -37,8 +36,12 @@ class LyricsViewModel @Inject constructor(
     private val _lyrics = MutableStateFlow<List<LyricLine>>(emptyList())
     val lyrics: StateFlow<List<LyricLine>> = _lyrics.asStateFlow()
 
-    private val _positionMs = MutableStateFlow(0L)
-    val positionMs: StateFlow<Long> = _positionMs.asStateFlow()
+    val positionMs: StateFlow<Long> = playbackStateHolder.positionTicks()
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            playbackStateHolder.estimatePosition().inWholeMilliseconds
+        )
 
     private val _isCurrentTrack = MutableStateFlow(false)
     val isCurrentTrack: StateFlow<Boolean> = _isCurrentTrack.asStateFlow()
@@ -72,15 +75,6 @@ class LyricsViewModel @Inject constructor(
     val durationMs: StateFlow<Long> = playbackStateHolder.state
         .map { it.currentAudio?.duration ?: 0L }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0L)
-
-    init {
-        viewModelScope.launch {
-            while (isActive) {
-                _positionMs.value = playbackStateHolder.estimatePosition().inWholeMilliseconds
-                delay(250L)
-            }
-        }
-    }
 
     fun loadLyrics(track: Track, followCurrentTrack: Boolean = false) {
         this.followCurrentTrack = followCurrentTrack
