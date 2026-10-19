@@ -8,17 +8,12 @@ import cc.tomko.outify.playback.PlaybackStateHolder
 import cc.tomko.outify.ui.GlobalPopupController
 import cc.tomko.outify.ui.PopupSpec
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
@@ -26,18 +21,12 @@ class MiniPlayerViewModel @Inject constructor(
     private val playbackStateHolder: PlaybackStateHolder,
     val spirc: SpircWrapper,
 ) : ViewModel() {
-    private val _positionMs =
-        MutableStateFlow(playbackStateHolder.estimatePosition().inWholeMilliseconds)
-    val positionMs = _positionMs.asStateFlow()
-
-    init {
-        viewModelScope.launch {
-            while (isActive) {
-                _positionMs.value = playbackStateHolder.estimatePosition().inWholeMilliseconds
-                delay(250L)
-            }
-        }
-    }
+    val positionMs: StateFlow<Long> = playbackStateHolder.positionTicks()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = playbackStateHolder.estimatePosition().inWholeMilliseconds
+        )
 
     val currentAudio: StateFlow<PlayableAudio?> = playbackStateHolder.state
         .map { it.currentAudio }

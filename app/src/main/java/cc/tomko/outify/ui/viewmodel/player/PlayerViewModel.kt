@@ -21,7 +21,6 @@ import coil3.ImageLoader
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -33,7 +32,6 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -58,9 +56,12 @@ class PlayerViewModel @Inject constructor(
     private val _lyrics = MutableStateFlow<List<LyricLine>>(emptyList())
     val lyrics: StateFlow<List<LyricLine>> = _lyrics
 
-    private val _positionMs =
-        MutableStateFlow(playbackStateHolder.estimatePosition().inWholeMilliseconds)
-    val positionMs = _positionMs.asStateFlow()
+    val positionMs: StateFlow<Long> = playbackStateHolder.positionTicks()
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            playbackStateHolder.estimatePosition().inWholeMilliseconds
+        )
 
     val isShuffling = settingsRepository.shuffleEnabled
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
@@ -92,13 +93,6 @@ class PlayerViewModel @Inject constructor(
             .map { it.forwardMilliseconds }
 
     init {
-        viewModelScope.launch {
-            while (isActive) {
-                _positionMs.value = playbackStateHolder.estimatePosition().inWholeMilliseconds
-                delay(250L)
-            }
-        }
-
         viewModelScope.launch {
             playbackStateHolder.state.collect { playback ->
                 _state.value = playback

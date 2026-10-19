@@ -66,6 +66,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cc.tomko.outify.core.model.LyricLine
 import cc.tomko.outify.ui.components.WavyMusicSlider
 import cc.tomko.outify.ui.viewmodel.bottomsheet.LyricsViewModel
@@ -85,7 +86,7 @@ fun LyricsBottomSheet(
     sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 ) {
     val lyrics by viewModel.lyrics.collectAsState()
-    val positionMs by viewModel.positionMs.collectAsState()
+    val positionMs by viewModel.positionMs.collectAsStateWithLifecycle()
     val isCurrentTrack by viewModel.isCurrentTrack.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val durationMs by viewModel.durationMs.collectAsState()

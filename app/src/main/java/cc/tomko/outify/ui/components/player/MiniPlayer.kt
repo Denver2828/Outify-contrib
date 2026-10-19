@@ -58,6 +58,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cc.tomko.outify.ALBUM_COVER_URL
 import cc.tomko.outify.R
 import cc.tomko.outify.core.model.CoverSize
@@ -88,7 +89,7 @@ fun MiniPlayer(
     val isPlaying by viewModel.isPlaying.collectAsState(initial = false)
     val isBuffering by viewModel.isBuffering().collectAsState(initial = false)
     val isActiveDevice by viewModel.isActiveDevice().collectAsState(initial = true)
-    val currentTime by viewModel.positionMs.collectAsState(initial = 0L)
+    val currentTime by viewModel.positionMs.collectAsStateWithLifecycle()
     val spirc = viewModel.spirc
 
     val totalTime = currentAudio?.duration ?: 0L

@@ -127,7 +127,7 @@ fun PlayerContent(
     val repeatMode by viewModel.repeatMode.collectAsStateWithLifecycle(initialValue = RepeatMode.NONE)
     val isFavorite by viewModel.isLiked.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
-    val elapsedMs by viewModel.positionMs.collectAsState()
+    val elapsedMs by viewModel.positionMs.collectAsStateWithLifecycle()
     val forwardMilliseconds by viewModel.forwardMilliseconds.collectAsState(15_000)
 
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
