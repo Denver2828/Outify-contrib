@@ -74,6 +74,7 @@ fun SharedTransitionScope.NavigationRoot(
 
     NavDisplay(
         backStack = backStack,
+        onBack = { backStack.popKeepingRoot() },
         modifier = modifier.padding(bottom = bottomPadding),
         entryDecorators = listOf(
             rememberSaveableStateHolderNavEntryDecorator(),
@@ -109,7 +110,7 @@ fun SharedTransitionScope.NavigationRoot(
                     listState = listState,
                     scrollToIndex = it.scrollToIndex,
                     onBack = {
-                        backStack.removeAt(backStack.lastIndex)
+                        backStack.popKeepingRoot()
                     },
                     onArtworkClick = {
                         backStack.add(Route.AlbumScreen(it.uri))
@@ -158,7 +159,7 @@ fun SharedTransitionScope.NavigationRoot(
                 TrackDetailScreen(
                     viewModel = viewModel,
                     onBack = {
-                        backStack.removeAt(backStack.lastIndex)
+                        backStack.popKeepingRoot()
                     },
                     artistClick = { uri ->
                         backStack.add(Route.ArtistScreen(uri))
@@ -182,7 +183,7 @@ fun SharedTransitionScope.NavigationRoot(
                 AlbumDetailScreen(
                     viewModel = viewModel,
                     onBack = {
-                        backStack.removeAt(backStack.lastIndex)
+                        backStack.popKeepingRoot()
                     },
                     artistClick = { uri ->
                         backStack.add(Route.ArtistScreen(uri))
@@ -216,7 +217,7 @@ fun SharedTransitionScope.NavigationRoot(
                     },
                     onArtistClick = { backStack.add(Route.ArtistScreen(it.uri)) },
                     onBack = {
-                        backStack.removeAt(backStack.lastIndex)
+                        backStack.popKeepingRoot()
                     }
                 )
             }
@@ -231,7 +232,7 @@ fun SharedTransitionScope.NavigationRoot(
                 PlaylistScreen(
                     viewModel = viewModel,
                     onBack = {
-                        backStack.removeAt(backStack.lastIndex)
+                        backStack.popKeepingRoot()
                     },
                     onArtworkClick = { track ->
                         val albumUri = track.album?.uri
@@ -256,7 +257,7 @@ fun SharedTransitionScope.NavigationRoot(
                 ProfileDetailScreen(
                     viewModel = viewModel,
                     onBack = {
-                        backStack.removeAt(backStack.lastIndex)
+                        backStack.popKeepingRoot()
                     },
                     onPlaylistClick = { uri ->
                         backStack.add(Route.PlaylistScreen(uri))
@@ -279,7 +280,7 @@ fun SharedTransitionScope.NavigationRoot(
                 ShowDetailScreen(
                     viewModel = viewModel,
                     onBack = {
-                        backStack.removeAt(backStack.lastIndex)
+                        backStack.popKeepingRoot()
                     },
                     artworkClick = {},
                 )
@@ -290,7 +291,7 @@ fun SharedTransitionScope.NavigationRoot(
 
                 SettingsScreen(
                     viewModel = viewModel,
-                    onNavigateBack = { backStack.removeAt(backStack.lastIndex) },
+                    onNavigateBack = { backStack.popKeepingRoot() },
                     openInterfaceSettings = {
                         backStack.add(Route.InterfaceSettings)
                     },
@@ -314,7 +315,7 @@ fun SharedTransitionScope.NavigationRoot(
 
                 InterfaceSettingScreen(
                     viewModel = viewModel,
-                    onNavigateBack = { backStack.removeAt(backStack.lastIndex) },
+                    onNavigateBack = { backStack.popKeepingRoot() },
                     openGestureSettings = {
                         backStack.add(Route.GestureSettings)
                     },
@@ -329,7 +330,7 @@ fun SharedTransitionScope.NavigationRoot(
 
                 AppearanceSettingScreen(
                     viewModel = viewModel,
-                    onNavigateBack = { backStack.removeAt(backStack.lastIndex) },
+                    onNavigateBack = { backStack.popKeepingRoot() },
                 )
             }
 
@@ -338,7 +339,7 @@ fun SharedTransitionScope.NavigationRoot(
 
                 GestureSettingsScreen(
                     viewModel = viewModel,
-                    onNavigateBack = { backStack.removeAt(backStack.lastIndex) },
+                    onNavigateBack = { backStack.popKeepingRoot() },
                 )
             }
 
@@ -347,7 +348,7 @@ fun SharedTransitionScope.NavigationRoot(
 
                 PlaybackSettingScreen(
                     viewModel = viewModel,
-                    onNavigateBack = { backStack.removeAt(backStack.lastIndex) },
+                    onNavigateBack = { backStack.popKeepingRoot() },
                 )
             }
 
@@ -356,13 +357,13 @@ fun SharedTransitionScope.NavigationRoot(
 
                 AccountsScreen(
                     viewModel = viewModel,
-                    onNavigateBack = { backStack.removeAt(backStack.lastIndex) },
+                    onNavigateBack = { backStack.popKeepingRoot() },
                 )
             }
 
             entry<Route.AboutScreen> {
                 AboutScreen(
-                    onNavigateBack = { backStack.removeAt(backStack.lastIndex) },
+                    onNavigateBack = { backStack.popKeepingRoot() },
                     onOpenUrl = {
                         context.startActivity(
                             Intent(Intent.ACTION_VIEW, it.toUri())
@@ -375,7 +376,7 @@ fun SharedTransitionScope.NavigationRoot(
                 val viewModel: MiscSettingsViewModel = hiltViewModel()
                 MiscSettingsScreen(
                     viewModel = viewModel,
-                    onNavigateBack = { backStack.removeAt(backStack.lastIndex) },
+                    onNavigateBack = { backStack.popKeepingRoot() },
                     openDebugScreen = { backStack.add(Route.DebugScreen) }
                 )
             }
@@ -384,7 +385,7 @@ fun SharedTransitionScope.NavigationRoot(
                 val viewModel: DebugViewModel = hiltViewModel()
                 DebugScreen(
                     viewModel = viewModel,
-                    onNavigateBack = { backStack.removeAt(backStack.lastIndex) },
+                    onNavigateBack = { backStack.popKeepingRoot() },
                 )
             }
         }

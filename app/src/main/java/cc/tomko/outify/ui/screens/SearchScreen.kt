@@ -96,6 +96,7 @@ import cc.tomko.outify.ui.GlobalPopupController
 import cc.tomko.outify.ui.PopupSpec
 import cc.tomko.outify.ui.components.SkeletonTrackRow
 import cc.tomko.outify.ui.components.navigation.Route
+import cc.tomko.outify.ui.components.navigation.popKeepingRoot
 import cc.tomko.outify.ui.components.navigation.Route.ArtistScreen
 import cc.tomko.outify.ui.components.navigation.Route.PlaylistScreen
 import cc.tomko.outify.ui.components.navigation.Route.TrackScreen
@@ -192,7 +193,7 @@ fun SharedTransitionScope.SearchScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(onClick = {
-                            backStack.removeAt(backStack.lastIndex)
+                            backStack.popKeepingRoot()
                         }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
                         }

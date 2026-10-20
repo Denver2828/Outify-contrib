@@ -86,6 +86,7 @@ import cc.tomko.outify.ui.components.ErrorScreen
 import cc.tomko.outify.ui.components.bottomsheet.CreateFolderBottomSheet
 import cc.tomko.outify.ui.components.bottomsheet.MoveToFolderBottomSheet
 import cc.tomko.outify.ui.components.navigation.Route
+import cc.tomko.outify.ui.components.navigation.popKeepingRoot
 import cc.tomko.outify.ui.components.rememberCollapsingHeaderState
 import cc.tomko.outify.ui.components.rows.AlbumRow
 import cc.tomko.outify.ui.components.rows.PlaylistRow
@@ -473,7 +474,7 @@ fun SharedTransitionScope.LibraryScreen(
         CollapsingHeader(
             collapseFraction = collapsingState.collapseFraction,
             headerHeight = topPadding,
-            onBackPressed = { backStack.removeAt(backStack.lastIndex) },
+            onBackPressed = { backStack.popKeepingRoot() },
             backgroundContent = {
                 var artworkUrl by viewModel.headerArtwork
                 LaunchedEffect(libraryState.playlists) {
