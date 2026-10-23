@@ -91,6 +91,7 @@ import cc.tomko.outify.ui.components.GlobalPopupHost
 import cc.tomko.outify.ui.components.navigation.FloatingOutifyBottomNav
 import cc.tomko.outify.ui.components.navigation.NavDestination
 import cc.tomko.outify.ui.components.navigation.NavigationRoot
+import cc.tomko.outify.ui.components.navigation.currentOr
 import cc.tomko.outify.ui.components.navigation.OutifyBottomNav
 import cc.tomko.outify.ui.components.navigation.Route
 import cc.tomko.outify.ui.components.player.MiniPlayer
@@ -239,7 +240,7 @@ class MainActivity : ComponentActivity() {
             ) { Icon(Icons.Default.LibraryMusic, contentDescription = null) },
         )
 
-        val currentRoute = backStack.last()
+        val currentRoute = backStack.currentOr(startRoute)
 
         SideEffect {
             assistContentRoute = currentRoute as? Route
