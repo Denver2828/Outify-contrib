@@ -18,6 +18,9 @@ import kotlin.math.max
 
 private const val TAG = "AudioEngine"
 
+/** How often the hang monitor looks at the in-flight write. */
+private const val HANG_CHECK_INTERVAL_MS = 1_000L
+
 enum class PcmFormat {
     S16,
 }
@@ -49,6 +52,40 @@ class AudioEngine(
 
     private val writeLock = ReentrantLock()
 
+    private val writeWatchdog = AudioWriteWatchdog<AudioTrack>(
+        position = { track ->
+            try {
+                track.playbackHeadPosition.toLong() and 0xFFFFFFFFL
+            } catch (ignored: Exception) {
+                null
+            }
+        },
+        // pause() wakes the native wait inside a blocking write, so the write returns short.
+        interrupt = { track ->
+            try {
+                track.pause()
+            } catch (ignored: Exception) {
+                // released or never initialized: nothing is blocked on it
+            }
+        },
+    )
+
+    /**
+     * Watches the blocking AudioTrack.write from its own thread. It must not take [writeLock]:
+     * [onPcmReady] holds it across the hung write, which is exactly what it has to break.
+     */
+    private val hangMonitor = Thread({
+        while (true) {
+            try {
+                Thread.sleep(HANG_CHECK_INTERVAL_MS)
+            } catch (_: InterruptedException) {
+                return@Thread
+            }
+            val stuckMs = writeWatchdog.check() ?: continue
+            Log.w(TAG, "AudioTrack.write made no playback progress for $stuckMs ms, interrupting it")
+        }
+    }, "AudioHangMonitor").apply { isDaemon = true }
+
     init {
         // Registers this class as the PCM callback.
         // Rust stores the GlobalRef and calls the onPcm method
@@ -56,6 +93,8 @@ class AudioEngine(
 
         // Registers callbacks to handle librespot events
         registerPlayerEventListener(eventCallback)
+
+        hangMonitor.start()
     }
 
     private fun ensureAudioTrack(sampleRate: Int, channels: Int, format: PcmFormat): Boolean {
@@ -183,6 +222,7 @@ class AudioEngine(
      * and player event listener.
      */
     fun releaseNative() {
+        hangMonitor.interrupt()
         unregisterPcmCallback()
         unregisterPlayerEventListener()
     }
@@ -323,7 +363,8 @@ class AudioEngine(
     private fun drainSonicTo(track: AudioTrack) {
         var output = sonic.getOutput()
         while (output.hasRemaining()) {
-            writeToTrack(output, output.remaining(), track)
+            // A hung track was released, and Sonic reset with it.
+            if (!writeToTrack(output, output.remaining(), track)) return
             output = sonic.getOutput()
         }
     }
@@ -334,20 +375,38 @@ class AudioEngine(
         val track = audioTrack
         var output = sonic.getOutput()
         while (track != null && output.hasRemaining()) {
-            writeToTrack(output, output.remaining(), track)
+            // A hung track was released, and Sonic reset with it.
+            if (!writeToTrack(output, output.remaining(), track)) return
             output = sonic.getOutput()
         }
         sonic.flush(AudioProcessor.StreamMetadata.DEFAULT)
         sonicCommittedSpeed = 1f
     }
 
-    private fun writeToTrack(buffer: ByteBuffer, size: Int, track: AudioTrack) {
-        val written = track.write(buffer, size, AudioTrack.WRITE_BLOCKING)
+    /**
+     * Writes to [track] under [writeLock]. Returns false when the write hung and was interrupted
+     * by the hang monitor: the track is then released (rest of this buffer dropped) and the next
+     * PCM frame recreates it through [ensureAudioTrack].
+     */
+    private fun writeToTrack(buffer: ByteBuffer, size: Int, track: AudioTrack): Boolean {
+        writeWatchdog.beginWrite(track)
+        var hung = false
+        val written = try {
+            track.write(buffer, size, AudioTrack.WRITE_BLOCKING)
+        } finally {
+            hung = writeWatchdog.endWrite(track)
+        }
+        if (hung) {
+            Log.w(TAG, "AudioTrack.write hung without playback progress ($written / $size bytes), rebuilding the track")
+            releaseAudioTrack()
+            return false
+        }
         if (written < 0) {
             Log.e(TAG, "AudioTrack.write returned error: $written")
         } else if (written < size) {
             Log.w(TAG, "AudioTrack wrote $written / $size bytes (partial write)")
         }
+        return true
     }
 
     /**
